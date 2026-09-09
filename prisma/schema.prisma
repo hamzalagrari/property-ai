@@ -1,0 +1,86 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../app/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model Property {
+  id         String      @id @default(cuid())
+  name       String
+  address    String
+  city       String
+  apartments Apartment[]
+  createdAt  DateTime    @default(now())
+}
+
+model Apartment {
+  id                  String               @id @default(cuid())
+  number              String
+  floor               Int
+  rooms               Int
+  status              ApartmentStatus
+  propertyId          String
+  property            Property             @relation(fields: [propertyId], references: [id])
+  tenants             Tenant[]
+  maintenanceRequests MaintenanceRequest[]
+}
+
+model Tenant {
+  id          String     @id @default(cuid())
+  name        String
+  email       String
+  phone       String?
+  apartmentId String
+  apartment   Apartment  @relation(fields: [apartmentId], references: [id])
+  contracts   Contract[]
+}
+
+model Contract {
+  id          String   @id @default(cuid())
+  tenantId    String
+  startDate   DateTime
+  endDate     DateTime
+  monthlyRent Float
+  status      String
+  tenant      Tenant   @relation(fields: [tenantId], references: [id])
+}
+
+model MaintenanceRequest {
+  id          String   @id @default(cuid())
+  apartmentId String
+  tenantId    String?
+  title       String
+  description String
+  priority    String
+  status      String
+  createdAt   DateTime @default(now())
+
+  apartment Apartment @relation(fields: [apartmentId], references: [id])
+}
+
+enum ApartmentStatus {
+  OCCUPIED
+  VACANT
+  MAINTENANCE
+}
+model Document {
+  id        String   @id @default(cuid())
+  name      String
+  type      String
+  content   String
+  createdAt DateTime @default(now())
+
+  chunks    DocumentChunk[]
+}
+
+model DocumentChunk {
+  id         String   @id @default(cuid())
+  documentId String
+  content    String
+  chunkIndex Int
+
+  document Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+}
