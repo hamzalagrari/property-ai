@@ -12,18 +12,12 @@ import {
 } from "lucide-react";
 
 const navigation = [
-  {
-    name: "Dashboard",
-    icon: LayoutDashboard,
-  },
+  
   {
     name: "Properties",
     icon: Building2,
   },
-  {
-    name: "Apartments",
-    icon: Home,
-  },
+  
   {
     name: "Tenants",
     icon: Users,
