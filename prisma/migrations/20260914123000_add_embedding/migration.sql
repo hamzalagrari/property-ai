@@ -1,0 +1,2 @@
+-- The embedding column already exists in the database.
+-- This migration records that existing schema change in Prisma's migration history.

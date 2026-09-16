@@ -26,6 +26,8 @@ model Apartment {
   property            Property             @relation(fields: [propertyId], references: [id])
   tenants             Tenant[]
   maintenanceRequests MaintenanceRequest[]
+  ownerId             String?
+  owner               User?                @relation("ApartmentOwner", fields: [ownerId], references: [id])
 }
 
 model Tenant {
@@ -66,6 +68,7 @@ enum ApartmentStatus {
   VACANT
   MAINTENANCE
 }
+
 model Document {
   id        String   @id @default(cuid())
   name      String
@@ -73,14 +76,31 @@ model Document {
   content   String
   createdAt DateTime @default(now())
 
-  chunks    DocumentChunk[]
+  chunks DocumentChunk[]
 }
 
 model DocumentChunk {
-  id         String   @id @default(cuid())
+  id         String @id @default(cuid())
   documentId String
   content    String
   chunkIndex Int
+  embedding  Unsupported("vector(3072)")?
 
   document Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+}
+
+enum UserRole {
+  MANAGER
+  OWNER
+}
+
+model User {
+  id        String   @id @default(cuid())
+  name      String
+  email     String   @unique
+  password  String
+  role      UserRole @default(OWNER)
+  createdAt DateTime @default(now())
+
+  ownedApartments Apartment[] @relation("ApartmentOwner")
 }

@@ -1,0 +1,1 @@
+-- Reconcile the embedding column that already exists in the database.

@@ -1,5 +1,8 @@
 import { GoogleGenAI } from "@google/genai";
 import { NextResponse } from "next/server";
+import { getServerSession } from "next-auth";
+
+import { authOptions } from "@/auth";
 
 import {
   findExpiringContracts,
@@ -35,6 +38,49 @@ const tools = [
 
 export async function POST(req: Request) {
   try {
+    /*
+     * Get the authenticated user from NextAuth.
+     *
+     * IMPORTANT:
+     * We do NOT trust role information coming from
+     * the frontend or from Gemini.
+     */
+    const session =
+      await getServerSession(authOptions);
+
+    if (!session?.user) {
+      return NextResponse.json(
+        {
+          error: "Unauthorized.",
+        },
+        {
+          status: 401,
+        }
+      );
+    }
+
+    const user = {
+      id: session.user.id,
+      role: session.user.role,
+    };
+
+    /*
+     * Only our two database roles are allowed.
+     */
+    if (
+      user.role !== "MANAGER" &&
+      user.role !== "OWNER"
+    ) {
+      return NextResponse.json(
+        {
+          error: "Forbidden.",
+        },
+        {
+          status: 403,
+        }
+      );
+    }
+
     const { message } = await req.json();
 
     if (!message) {
@@ -48,7 +94,9 @@ export async function POST(req: Request) {
       );
     }
 
-    // Conversation history between the user and Gemini
+    /*
+     * Give Gemini the user's message.
+     */
     const contents: any[] = [
       {
         role: "user",
@@ -60,25 +108,43 @@ export async function POST(req: Request) {
       },
     ];
 
-    // Allow Gemini to use multiple tools
+    /*
+     * Allow Gemini to use multiple tools.
+     */
     for (let step = 0; step < 5; step++) {
-      console.log(`\n--- Agent step ${step + 1} ---`);
+      console.log(
+        `\n--- Agent step ${step + 1} ---`
+      );
 
-      const response = await ai.models.generateContent({
-        model: "gemini-2.5-flash",
+      console.log(
+        "Authenticated user:",
+        {
+          id: user.id,
+          role: user.role,
+        }
+      );
 
-        contents,
+      const response =
+        await ai.models.generateContent({
+          model: "gemini-2.5-flash",
 
-        config: {
-          tools,
-        },
-      });
+          contents,
 
-      const functionCalls = response.functionCalls ?? [];
+          config: {
+            tools,
+          },
+        });
 
-      // Gemini has finished and doesn't need another tool
+      const functionCalls =
+        response.functionCalls ?? [];
+
+      /*
+       * Gemini has finished.
+       */
       if (functionCalls.length === 0) {
-        console.log("Gemini finished.");
+        console.log(
+          "Gemini finished."
+        );
 
         return NextResponse.json({
           answer: response.text,
@@ -87,20 +153,28 @@ export async function POST(req: Request) {
 
       console.log(
         "Gemini requested:",
-        functionCalls.map((call) => call.name)
+        functionCalls.map(
+          (call) => call.name
+        )
       );
 
-      // Add Gemini's response containing the function call
+      /*
+       * Add Gemini's function calls to history.
+       */
       const modelParts =
-        response.candidates?.[0]?.content?.parts ?? [];
+        response.candidates?.[0]?.content
+          ?.parts ?? [];
 
       contents.push({
         role: "model",
         parts: modelParts,
       });
 
-      // Execute all requested tools
-      const functionResponseParts: any[] = [];
+      /*
+       * Execute all requested tools.
+       */
+      const functionResponseParts: any[] =
+        [];
 
       for (const functionCall of functionCalls) {
         console.log(
@@ -115,81 +189,115 @@ export async function POST(req: Request) {
 
         let result;
 
-        // Tool 1: Find expiring contracts
+        /*
+         * Tool 1:
+         * Find expiring contracts
+         */
         if (
           functionCall.name ===
           "find_expiring_contracts"
         ) {
-          const args = functionCall.args as {
-            beforeDate: string;
-          };
+          const args =
+            functionCall.args as {
+              beforeDate: string;
+            };
 
-          result = await findExpiringContracts(
-            args.beforeDate
-          );
+          result =
+            await findExpiringContracts(
+              args.beforeDate,
+              user
+            );
         }
 
-        // Tool 2: Search knowledge base
+        /*
+         * Tool 2:
+         * Search knowledge base
+         */
         else if (
           functionCall.name ===
           "search_knowledge_base"
         ) {
-          const args = functionCall.args as {
-            query: string;
-          };
+          const args =
+            functionCall.args as {
+              query: string;
+            };
 
-          result = await searchKnowledgeBase(
-            args.query
-          );
+          result =
+            await searchKnowledgeBase(
+              args.query
+            );
         }
 
-        // Tool 3: Get tenant context
+        /*
+         * Tool 3:
+         * Get tenant context
+         */
         else if (
           functionCall.name ===
           "get_tenant_context"
         ) {
-          const args = functionCall.args as {
-            tenantName: string;
-          };
+          const args =
+            functionCall.args as {
+              tenantName: string;
+            };
 
-          result = await getTenantContext(
-            args.tenantName
-          );
+          result =
+            await getTenantContext(
+              args.tenantName,
+              user
+            );
         }
-        
-        // Tool 4: Create maintenance request
-else if (
-  functionCall.name ===
-  "create_maintenance_request"
-) {
-  const args = functionCall.args as {
-    tenantName: string;
-    title: string;
-    description: string;
-    priority?: string;
-  };
 
-  result = await createMaintenanceRequest(
-    args.tenantName,
-    args.title,
-    args.description,
-    args.priority ?? "medium"
-  );
-}
-// Tool 5: Check existing maintenance requests
-else if (
-  functionCall.name ===
-  "get_open_maintenance_requests"
-) {
-  const args = functionCall.args as {
-    tenantName: string;
-  };
+        /*
+         * Tool 4:
+         * Create maintenance request
+         */
+        else if (
+          functionCall.name ===
+          "create_maintenance_request"
+        ) {
+          const args =
+            functionCall.args as {
+              tenantName: string;
+              title: string;
+              description: string;
+              priority?: string;
+            };
 
-  result = await getOpenMaintenanceRequests(
-    args.tenantName
-  );
-}
-        // Unknown tool
+          result =
+            await createMaintenanceRequest(
+              args.tenantName,
+              args.title,
+              args.description,
+              args.priority ??
+                "medium",
+              user
+            );
+        }
+
+        /*
+         * Tool 5:
+         * Get open maintenance requests
+         */
+        else if (
+          functionCall.name ===
+          "get_open_maintenance_requests"
+        ) {
+          const args =
+            functionCall.args as {
+              tenantName: string;
+            };
+
+          result =
+            await getOpenMaintenanceRequests(
+              args.tenantName,
+              user
+            );
+        }
+
+        /*
+         * Unknown tool
+         */
         else {
           return NextResponse.json(
             {
@@ -209,6 +317,7 @@ else if (
         functionResponseParts.push({
           functionResponse: {
             name: functionCall.name,
+
             response: {
               result,
             },
@@ -216,14 +325,18 @@ else if (
         });
       }
 
-      // Give all tool results back to Gemini
+      /*
+       * Give all tool results back to Gemini.
+       */
       contents.push({
         role: "user",
         parts: functionResponseParts,
       });
     }
 
-    // Safety limit
+    /*
+     * Safety limit.
+     */
     return NextResponse.json(
       {
         error:
